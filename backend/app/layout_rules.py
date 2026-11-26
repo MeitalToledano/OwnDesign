@@ -29,12 +29,16 @@ class _Planner:
     def __init__(self, room: Room, variant: int):
         self.room, self.variant, self.placed = room, variant, []
 
+    def size(self, ref: str, kind: str) -> dict:
+        """{w, d} of a piece: an existing piece keeps its own size (its type may not even be in the catalog)."""
+        return self.room.movable[ref] if ref else FURNITURE_BY_TYPE[kind]
+
     def length(self, side: str) -> float:
         return self.room.width if side in ("north", "south") else self.room.depth
 
     def pose(self, ref: str, kind: str, side: str, t: float, off: float = 0, facing: str | None = None) -> dict:
         """A piece with its back to `side`, centred `t` cm along it, `off` cm out from the wall."""
-        d, r = FURNITURE_BY_TYPE[kind]["d"], self.room
+        d, r = self.size(ref, kind)["d"], self.room
         x, y = {
             "north": (t, d / 2 + off),
             "south": (t, r.depth - d / 2 - off),
@@ -60,7 +64,7 @@ class _Planner:
 
     def along_wall(self, ref: str, kind: str, sides, centre: float | None = None, off: float = 0, from_corner: bool = False):
         """Against the first wall in `sides` with room, as near `centre` (or the wall's start) as possible."""
-        w = FURNITURE_BY_TYPE[kind]["w"]
+        w = self.size(ref, kind)["w"]
         for side in sides:
             length = self.length(side)
             target = centre if centre is not None else (w / 2 if from_corner else length / 2)
@@ -102,16 +106,16 @@ def rule_layout(room: Room, variant: int) -> list[dict] | None:
         side, t = p.along_wall(ref, kind, p.ranked(avoid_window=True))
         if side is None:
             return None
-        bed_w = FURNITURE_BY_TYPE[kind]["w"]
+        bed_w = p.size(ref, kind)["w"]
         for (tref, tkind), sign in zip(take(("bedside-table",), 2), (-1, 1)):
-            if not p.put(p.pose(tref, tkind, side, t + sign * (bed_w / 2 + FURNITURE_BY_TYPE[tkind]["w"] / 2 + 5))):
+            if not p.put(p.pose(tref, tkind, side, t + sign * (bed_w / 2 + p.size(tref, tkind)["w"] / 2 + 5))):
                 later((tref, tkind))
 
     for ref, kind in take(("sofa",)):
         side, t = p.along_wall(ref, kind, p.ranked())
         if side is None:
             return None
-        gap = FURNITURE_BY_TYPE[kind]["d"] + 45  # sofa depth plus legroom to the coffee table
+        gap = p.size(ref, kind)["d"] + 45  # sofa depth plus legroom to the coffee table
         for tref, tkind in take(("tv-unit",), 1):
             if p.along_wall(tref, tkind, [OPPOSITE[side]], centre=t)[0] is None:
                 later((tref, tkind))
@@ -120,7 +124,7 @@ def rule_layout(room: Room, variant: int) -> list[dict] | None:
                 later((cref, ckind))
         across = [s for s in SIDES if s not in (side, OPPOSITE[side])]
         for (aref, akind), sign in zip(take(("armchair",), 2), (1, -1)):
-            near = gap + FURNITURE_BY_TYPE[akind]["d"] / 2  # level with the coffee table, from the sofa's wall
+            near = gap + p.size(aref, akind)["d"] / 2  # level with the coffee table, from the sofa's wall
             centre = near if side in ("north", "west") else p.length(across[0]) - near
             if p.along_wall(aref, akind, across[::sign], centre=centre)[0] is None:
                 later((aref, akind))
@@ -131,7 +135,7 @@ def rule_layout(room: Room, variant: int) -> list[dict] | None:
             later((ref, kind))
             continue
         for cref, ckind in take(("chair",), 1):
-            if not p.put(p.pose(cref, ckind, side, t, off=FURNITURE_BY_TYPE[kind]["d"] + 5, facing=OPPOSITE[side])):
+            if not p.put(p.pose(cref, ckind, side, t, off=p.size(ref, kind)["d"] + 5, facing=OPPOSITE[side])):
                 later((cref, ckind))
 
     row = take(KITCHEN_ORDER)
@@ -140,7 +144,7 @@ def rule_layout(room: Room, variant: int) -> list[dict] | None:
         corner_wall = "west" if side in ("north", "south") else "north"
         cursor = 0
         for ref, kind in sorted(row, key=lambda item: KITCHEN_ORDER.index(item[1])):
-            w = FURNITURE_BY_TYPE[kind]["w"]
+            w = p.size(ref, kind)["w"]
             if p.put(p.pose(ref, kind, side, cursor + w / 2)):
                 cursor += w
                 continue
@@ -153,7 +157,7 @@ def rule_layout(room: Room, variant: int) -> list[dict] | None:
             return None
 
     for ref, kind in take(("dining-table",)):
-        r, spec = p.room, FURNITURE_BY_TYPE[kind]
+        r, spec = p.room, p.size(ref, kind)
         if not p.put({"ref": ref, "type": kind, "x": r.width / 2, "y": r.depth / 2, "rotation": 0}):
             later((ref, kind))
             continue
@@ -162,7 +166,7 @@ def rule_layout(room: Room, variant: int) -> list[dict] | None:
             if not p.put({"ref": cref, "type": ckind, "x": x, "y": y, "rotation": rotation}):
                 later((cref, ckind))
 
-    todo.sort(key=lambda item: -(FURNITURE_BY_TYPE[item[1]]["w"] * FURNITURE_BY_TYPE[item[1]]["d"]))
+    todo.sort(key=lambda item: -(p.size(*item)["w"] * p.size(*item)["d"]))
     for ref, kind in todo:
         if p.along_wall(ref, kind, p.ranked(avoid_window=kind == "wardrobe"))[0] is None:
             if p.along_wall(ref, kind, SIDES, off=60)[0] is None:  # a second row, leaving a walkway by the wall

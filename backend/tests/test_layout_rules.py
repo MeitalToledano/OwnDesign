@@ -61,6 +61,15 @@ def test_extra_companion_pieces_are_placed_too():
     assert Counter(p["type"] for p in pieces) == Counter({"chair": 3, "bedside-table": 3, "desk": 1, "double-bed": 1})
 
 
+def test_an_existing_piece_keeps_its_own_size_even_if_not_in_the_catalog():
+    """The editor accepts any piece type and size; moving one must neither crash nor resize it."""
+    piano = {"id": "piano", "type": "grand-piano", "x": 200, "y": 200, "w": 150, "d": 150, "rotation": 0}
+    wide_bed = {**BED, "w": 180}
+    pieces = rule_layout(room(bedroom([piano, wide_bed]), existing=["piano", "bed"], keep=False), 0)
+    assert pieces is not None
+    assert {p["id"]: (p["w"], p["d"]) for p in pieces} == {"piano": (150, 150), "bed": (180, 200)}
+
+
 def test_too_much_furniture_gives_none():
     assert rule_layout(room(new={"double-bed": 4}), 0) is None
     assert rule_layout(room(bedroom(openings=[], size=(80, 80)), new={"chair": 1}), 0) is not None
