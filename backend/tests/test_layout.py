@@ -61,6 +61,28 @@ def test_room_is_the_inside_of_its_walls_with_its_openings():
     assert (zone.x0, zone.x1, zone.y1 - zone.y0, zone.y1) == (40, 120, DOOR_CLEARANCE_CM, 350)
 
 
+def test_a_door_in_a_neighbours_wall_on_the_shared_line_counts():
+    """Wizard rooms side by side: the hall's own wall on the bedroom's east line holds a door into the bedroom."""
+    plan = bedroom(openings=[]).model_dump(by_alias=True)
+    plan["rooms"].append({"id": "r3", "name": "Hall", "type": "hallway"})
+    plan["walls"].append({"id": "h-w", "x1": 420, "y1": 370, "x2": 420, "y2": 0, "thickness": 20, "kind": "exterior", "roomId": "r3"})
+    plan["walls"].append({"id": "far", "x1": 420, "y1": 900, "x2": 420, "y2": 1200, "thickness": 20, "kind": "exterior", "roomId": "r3"})
+    plan["openings"] = [
+        {"id": "d", "wallId": "h-w", "type": "door", "offset": 100, "width": 80},  # y 270..190 on the shared line
+        {"id": "beyond", "wallId": "far", "type": "door", "offset": 0, "width": 80},  # same line, past the room
+    ]
+    r = room(Geometry.model_validate(plan))
+    assert r.openings == [{"type": "door", "side": "east", "from": 180, "to": 260}]
+    with pytest.raises(LayoutError, match="blocks a door"):
+        check_alternative(room(Geometry.model_validate(plan), new={"wardrobe": 1}), [piece("wardrobe", 370, 200, rotation=90)])
+
+
+def test_positions_round_half_up_so_touching_pieces_stay_touching():
+    r = room(bedroom(openings=[]), new={"chair": 2})
+    placed = check_alternative(r, [piece("chair", 100.5, 100), piece("chair", 145.5, 100)])
+    assert [p["x"] for p in placed] == [101, 146]
+
+
 def test_a_room_without_openings_has_no_door_zone():
     r = room(bedroom(openings=[]))
     assert r.openings == [] and r.door_zones == []

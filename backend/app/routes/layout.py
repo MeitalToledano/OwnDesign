@@ -121,6 +121,8 @@ def suggest_layout(project_id: UUID, body: LayoutRequest, user: CurrentUser = De
     except LayoutError as error:
         raise HTTPException(422, str(error)) from None
 
+    # Read before a slot is reserved: a failure here must not use up one of the user's daily requests.
+    brief = user.db.table("project_briefs").select("brief").eq("project_id", project["id"]).execute().data
     request = body.model_dump(exclude={"geometry"})
     try:
         suggestion_id = service().rpc(
@@ -132,9 +134,9 @@ def suggest_layout(project_id: UUID, body: LayoutRequest, user: CurrentUser = De
             raise HTTPException(429, "Daily limit of layout suggestions reached. Please come back tomorrow.") from None
         raise
 
-    brief = user.db.table("project_briefs").select("brief").eq("project_id", project["id"]).execute().data
     try:
-        response = openai.responses.create(
+        # No automatic retries: each could be billed against the one reserved slot, and the editor waits locked.
+        response = openai.with_options(max_retries=0).responses.create(
             model=settings().openai_model,
             instructions=SYSTEM_PROMPT,
             input=[{"role": "user", "content": _prompt(room, brief[0]["brief"] if brief else None)}],

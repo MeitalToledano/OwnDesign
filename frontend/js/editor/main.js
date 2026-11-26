@@ -176,7 +176,8 @@ const redo = () => {
 // While a layout is being suggested nothing may change the plan it was asked for.
 function setBusy(busy) {
   state.busy = busy;
-  for (const node of [canvas, $(".rail"), $("#actions"), $("#catalog")]) node.inert = busy;
+  // The inspector too: renaming the room or loading a version would make the answer useless and waste a daily slot.
+  for (const node of [canvas, $(".rail"), $("#actions"), $("#catalog"), $("#inspector")]) node.inert = busy;
   $("#save").disabled = busy;
 }
 const removeSelection = () => state.selection && editor.commit(P.remove(editor.plan, state.selection.kind, state.selection.id), null);
@@ -221,6 +222,7 @@ function placeAtCentre() {
 
 function onKey(event) {
   if (event.target.closest("input, select, textarea, dialog")) return;
+  if (event.target.closest(".layout-panel")) return; // its buttons and lists are not the canvas
   if (state.live || state.previewLine) return; // mid-drag: the drag would overwrite a keyboard edit
   if (state.busy) return;
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;

@@ -27,6 +27,11 @@ class FakeOpenAI:
         self.fail = False
         self.text = json.dumps({"alternatives": [EAST, BLOCKS_DOOR, WEST]})
         self.responses = SimpleNamespace(create=self._create)
+        self.options = []
+
+    def with_options(self, **options):
+        self.options.append(options)
+        return self
 
     def _create(self, **kwargs):
         self.calls.append(kwargs)
@@ -74,7 +79,7 @@ def test_valid_layouts_come_back_in_plan_coordinates(api, world, fake, admin):
     assert alternatives[0]["items"] == [{"type": "wardrobe", "x": 380, "y": 210, "w": 180, "d": 60, "rotation": 90}]
 
     call = fake.calls[0]
-    assert call["store"] is False and call["timeout"] <= 60
+    assert call["store"] is False and call["timeout"] <= 60 and fake.options == [{"max_retries": 0}]
     assert call["text"]["format"]["type"] == "json_schema" and call["text"]["format"]["strict"] is True
     context = call["input"][0]["content"]
     assert context.startswith("<room>") and context.count("</room>") == 1, "brief text cannot close the tag"

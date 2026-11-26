@@ -10,7 +10,7 @@ const MAX_PIECES = 20; // the backend's limit (backend/app/schemas.py)
 const label = (type) => FURNITURE_BY_TYPE.get(type)?.label ?? type;
 
 export function createLayoutPanel({ editor, projectId, onBusy, onChange }) {
-  const node = h("section", { class: "layout-panel stack", "aria-label": "Suggest a layout" });
+  const node = h("section", { class: "layout-panel stack", "aria-label": "Suggest a layout", tabindex: -1 });
   let catalog = null; // the pending or finished GET /v1/catalog, fetched once
   let defaults = {}; // room type -> [{type, count}]: the usual pieces a new list starts with
   let s = null; // { roomId, keep, existing: Map<id, kept>, counts: Map<type, n>, phase, alternatives, chosen }
@@ -30,14 +30,15 @@ export function createLayoutPanel({ editor, projectId, onBusy, onChange }) {
       const missing = count - pieces.filter((piece) => piece.type === kind).length;
       if (missing > 0) counts.set(kind, missing);
     }
-    return { roomId, keep: true, existing: new Map(pieces.map((piece) => [piece.id, true])), counts, phase: "list", alternatives: [], chosen: 0 };
+    const existing = new Map(pieces.map((piece) => [piece.id, true]));
+    return { roomId, type, keep: true, existing, counts, pick: FURNITURE[0].type, phase: "list", alternatives: [], chosen: 0 };
   }
 
-  // When the room's furniture changes under the list (an applied layout, an undo, a piece dragged in or out),
-  // the list starts over from what the room now holds, so it never offers pieces the room already has.
+  // When the room's furniture or type changes under the list (an applied layout, an undo, a piece dragged in or
+  // out, a new room type), the list starts over from the room as it now is, so it never offers what it has.
   function sync() {
     const ids = inRoom().map((piece) => piece.id);
-    const same = ids.length === s.existing.size && ids.every((id) => s.existing.has(id));
+    const same = room().type === s.type && ids.length === s.existing.size && ids.every((id) => s.existing.has(id));
     if (!same) s = { ...fresh(s.roomId), keep: s.keep };
   }
 
@@ -88,22 +89,39 @@ export function createLayoutPanel({ editor, projectId, onBusy, onChange }) {
   function listView() {
     sync();
     const pieces = inRoom();
-    const count = total();
-    const nothingToArrange = s.keep && [...s.counts.values()].every((n) => n === 0);
-    const tooMany = count > MAX_PIECES;
-    const picker = h("select", { "aria-label": "Furniture to add" }, FURNITURE.map((item) => h("option", { value: item.type }, `${item.label} (${item.w}×${item.d})`)));
+    const counter = h("span", { class: "code", id: "layout-count" });
+    const go = h("button", { type: "button", class: "primary", "data-focus": "suggest", onclick: suggest }, h("span", { class: "icon", "aria-hidden": "true" }, "auto_awesome"), "Suggest layouts");
+    const hint = h("p", { class: "muted small" }, "Add a piece, or let the AI move the existing ones.");
+    // Typing a count updates only these three, never the whole panel: a redraw between a button's mousedown
+    // and its click would swallow the click (type a count, then press "Suggest layouts" straight away).
+    const refresh = () => {
+      const count = total();
+      const nothingToArrange = s.keep && [...s.counts.values()].every((n) => n === 0);
+      counter.textContent = `${count} / ${MAX_PIECES} pieces`;
+      counter.classList.toggle("error", count > MAX_PIECES);
+      go.disabled = count === 0 || count > MAX_PIECES || nothingToArrange;
+      hint.hidden = !(nothingToArrange && count > 0);
+    };
+    const typeCount = (type, input) => {
+      const n = Math.max(0, Math.min(MAX_PIECES, Math.round(Number(input.value)) || 0));
+      s.counts = new Map(s.counts).set(type, n); // a row at 0 stays until removed; it adds nothing
+      refresh();
+      onChange();
+      return n;
+    };
+    const remove = (type) => {
+      const counts = new Map(s.counts);
+      counts.delete(type);
+      update({ counts });
+    };
+    const picker = h("select", { "aria-label": "Furniture to add", "data-focus": "pick", onchange: (event) => (s.pick = event.target.value) },
+      FURNITURE.map((item) => h("option", { value: item.type, selected: item.type === s.pick }, `${item.label} (${item.w}×${item.d})`)));
     const addPiece = () => {
       const counts = new Map(s.counts);
-      counts.set(picker.value, (counts.get(picker.value) ?? 0) + 1);
+      counts.set(s.pick, (counts.get(s.pick) ?? 0) + 1);
       update({ counts });
     };
-    const setCount = (type, value) => {
-      const counts = new Map(s.counts);
-      const n = Math.max(0, Math.min(MAX_PIECES, Math.round(Number(value)) || 0));
-      if (n === 0) counts.delete(type);
-      else counts.set(type, n);
-      update({ counts });
-    };
+    refresh();
     return [
       h("p", { class: "muted small" }, "Choose the furniture for this room. The AI suggests where to put it; nothing changes until you apply a suggestion."),
       h("div", { class: "stack-tight" },
@@ -111,7 +129,7 @@ export function createLayoutPanel({ editor, projectId, onBusy, onChange }) {
         pieces.length === 0 && h("p", { class: "muted small" }, "Nothing yet."),
         pieces.map((piece) =>
           h("label", { class: "check" },
-            h("input", { type: "checkbox", checked: s.existing.get(piece.id), onchange: (event) => update({ existing: new Map(s.existing).set(piece.id, event.target.checked) }) }),
+            h("input", { type: "checkbox", "data-focus": `existing:${piece.id}`, checked: s.existing.get(piece.id), onchange: (event) => update({ existing: new Map(s.existing).set(piece.id, event.target.checked) }) }),
             label(piece.type),
             h("span", { class: "chip" }, "existing"),
           ),
@@ -124,36 +142,37 @@ export function createLayoutPanel({ editor, projectId, onBusy, onChange }) {
         [...s.counts].map(([type, n]) =>
           h("div", { class: "piece" },
             h("span", { class: "grow" }, label(type)),
-            h("input", { type: "number", min: 0, max: MAX_PIECES, value: n, inputMode: "numeric", "aria-label": `How many: ${label(type)}`, onchange: (event) => setCount(type, event.target.value) }),
-            h("button", { type: "button", "aria-label": `Remove ${label(type)}`, onclick: () => setCount(type, 0) }, h("span", { class: "icon", "aria-hidden": "true" }, "close")),
+            h("input", {
+              type: "number", "data-focus": `count:${type}`, min: 0, max: MAX_PIECES, value: n, inputMode: "numeric", "aria-label": `How many: ${label(type)}`,
+              oninput: (event) => typeCount(type, event.target),
+              onchange: (event) => (event.target.value = typeCount(type, event.target)), // show the clamped value
+            }),
+            h("button", { type: "button", "data-focus": `remove:${type}`, "aria-label": `Remove ${label(type)}`, onclick: () => remove(type) }, h("span", { class: "icon", "aria-hidden": "true" }, "close")),
           ),
         ),
-        h("div", { class: "piece" }, picker, h("button", { type: "button", onclick: addPiece }, "Add")),
+        h("div", { class: "piece" }, picker, h("button", { type: "button", "data-focus": "add", onclick: addPiece }, "Add")),
       ),
       h("fieldset", { class: "stack-tight" },
         h("legend", { class: "label" }, "Pieces already in the room"),
-        h("label", { class: "check" }, h("input", { type: "radio", name: "layout-keep", checked: s.keep, onchange: () => update({ keep: true }) }), "Keep them where they are"),
-        h("label", { class: "check" }, h("input", { type: "radio", name: "layout-keep", checked: !s.keep, onchange: () => update({ keep: false }) }), "Let the AI move them"),
+        h("label", { class: "check" }, h("input", { type: "radio", name: "layout-keep", "data-focus": "keep", checked: s.keep, onchange: () => update({ keep: true }) }), "Keep them where they are"),
+        h("label", { class: "check" }, h("input", { type: "radio", name: "layout-keep", "data-focus": "move", checked: !s.keep, onchange: () => update({ keep: false }) }), "Let the AI move them"),
       ),
-      h("div", { class: "row between" },
-        h("span", { class: `code${tooMany ? " error" : ""}`, id: "layout-count" }, `${count} / ${MAX_PIECES} pieces`),
-        h("button", { type: "button", class: "primary", disabled: count === 0 || tooMany || nothingToArrange, onclick: suggest }, h("span", { class: "icon", "aria-hidden": "true" }, "auto_awesome"), "Suggest layouts"),
-      ),
-      nothingToArrange && count > 0 && h("p", { class: "muted small" }, "Add a piece, or let the AI move the existing ones."),
+      h("div", { class: "row between" }, counter, go),
+      hint,
     ];
   }
 
   function resultsView() {
     const walls = editor.plan.walls.filter((wall) => wall.roomId === s.roomId);
     const alternative = s.alternatives[s.chosen];
-    const review = nextPlan(alternative).furniture.some((item) => FURNITURE_BY_TYPE.get(item.type)?.review);
+    const review = P.roomFurniture(nextPlan(alternative), s.roomId).some((item) => FURNITURE_BY_TYPE.get(item.type)?.review);
     return [
       h("p", { class: "muted small" }, `${s.alternatives.length} suggestion${s.alternatives.length === 1 ? "" : "s"}. The chosen one is drawn dashed on the plan.`),
       h("div", { class: "alts", role: "group", "aria-label": "Layout suggestions" },
         s.alternatives.map((alt, i) => {
           const next = nextPlan(alt);
           const preview = { walls, furniture: P.roomFurniture(next, s.roomId) };
-          return h("button", { type: "button", class: "alt", "aria-pressed": String(i === s.chosen), onclick: () => update({ chosen: i }) },
+          return h("button", { type: "button", class: "alt", "data-focus": `alt:${i}`, "aria-pressed": String(i === s.chosen), onclick: () => update({ chosen: i }) },
             planThumbnail(preview, `Preview of ${alt.name}`),
             h("strong", {}, alt.name),
             alt.reason && h("span", { class: "muted small" }, alt.reason),
@@ -162,7 +181,7 @@ export function createLayoutPanel({ editor, projectId, onBusy, onChange }) {
       ),
       review && h("p", { class: "note" }, REVIEW_NOTE),
       h("div", { class: "row between" },
-        h("button", { type: "button", onclick: () => update({ phase: "list" }) }, "Try again"),
+        h("button", { type: "button", "data-focus": "again", onclick: () => update({ phase: "list" }) }, "Try again"),
         h("div", { class: "row" },
           h("button", { type: "button", onclick: () => update({ phase: "list", alternatives: [] }) }, "Cancel"),
           h("button", { type: "button", class: "primary", onclick: apply }, "Apply"),
@@ -175,11 +194,15 @@ export function createLayoutPanel({ editor, projectId, onBusy, onChange }) {
     if (!s || !room()) return node.replaceChildren();
     const body =
       s.phase === "loading"
-        ? [h("p", { class: "muted small", role: "status" }, "Arranging the room. This can take up to half a minute.")]
+        ? [h("p", { class: "muted small", role: "status" }, "Arranging the room. This can take up to a minute.")]
         : s.phase === "results"
           ? resultsView()
           : listView();
+    // The panel is rebuilt on every change. Focus goes back to the same control, so the next key press reaches it
+    // and not the editor's shortcuts (Backspace would otherwise delete the selected room).
+    const focused = node.contains(document.activeElement) ? document.activeElement.dataset.focus : null;
     node.replaceChildren(h("h3", { class: "label accent" }, "Suggest a layout"), ...body.flat().filter(Boolean));
+    if (focused) (node.querySelector(`[data-focus="${CSS.escape(focused)}"]`) ?? node).focus(); // gone (removed): the panel itself
   }
 
   return {

@@ -62,12 +62,15 @@ class Room:
     new: Counter  # catalog type -> how many to add
 
 
-def _side(wall, box: tuple[float, float, float, float]) -> str | None:
+def _side(wall, box: tuple[float, float, float, float], reach: float) -> str | None:
+    """The side of the room's box a wall lies on (within `reach` cm), or None for any other wall."""
     min_x, min_y, max_x, max_y = box
     if abs(wall.y1 - wall.y2) < EPS:
-        return "north" if abs(wall.y1 - min_y) <= abs(wall.y1 - max_y) else "south"
+        y = wall.y1
+        return "north" if abs(y - min_y) <= reach else "south" if abs(y - max_y) <= reach else None
     if abs(wall.x1 - wall.x2) < EPS:
-        return "west" if abs(wall.x1 - min_x) <= abs(wall.x1 - max_x) else "east"
+        x = wall.x1
+        return "west" if abs(x - min_x) <= reach else "east" if abs(x - max_x) <= reach else None
     return None
 
 
@@ -94,11 +97,13 @@ def room_for(geometry: Geometry, room_id: str, existing: list[str], keep_existin
     def local(item) -> dict:
         return {"id": item.id, "type": item.type, "x": item.x - origin[0], "y": item.y - origin[1], "w": item.w, "d": item.d, "rotation": item.rotation}
 
+    # Doors and windows in any wall on the room's outline count, not only the room's own walls: wizard rooms
+    # side by side each have their own wall on the shared line, and a neighbour's door in it opens into this room.
     openings, zones = [], []
-    by_id = {wall.id: wall for wall in walls}
+    all_walls = {wall.id: wall for wall in geometry.walls}
     for opening in geometry.openings:
-        wall = by_id.get(opening.wallId)
-        side = wall and _side(wall, box)
+        wall = all_walls.get(opening.wallId)
+        side = wall and _side(wall, box, 2 * inset)
         if side is None:
             continue
         # Positions along the side, measured from its west (north/south sides) or north (east/west sides) end.
@@ -162,7 +167,7 @@ def check_alternative(room: Room, items: list[dict]) -> list[dict]:
         x, y, rotation = item.get("x"), item.get("y"), item.get("rotation")
         if rotation not in ROTATIONS or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in (x, y)):
             raise LayoutError("The answer has an invalid position or rotation")
-        x, y = round(x), round(y)  # checked as it will be stored, so rounding cannot create an overlap
+        x, y = _whole(x), _whole(y)  # checked as it will be stored, so rounding cannot create an overlap
         rect = footprint(x, y, spec["w"], spec["d"], rotation)
         if not rect.within(room.width, room.depth):
             raise LayoutError("A piece does not fit inside the room")
@@ -180,4 +185,9 @@ def check_alternative(room: Room, items: list[dict]) -> list[dict]:
 def to_plan(room: Room, pieces: list[dict]) -> list[dict]:
     """Room-local pieces back in plan coordinates, rounded to whole centimetres."""
     ox, oy = room.origin
-    return [{**piece, "x": round(piece["x"] + ox), "y": round(piece["y"] + oy)} for piece in pieces]
+    return [{**piece, "x": _whole(piece["x"] + ox), "y": _whole(piece["y"] + oy)} for piece in pieces]
+
+
+def _whole(value: float) -> int:
+    # Halves always round up (Python's round() rounds them to even), so two touching pieces move together.
+    return math.floor(value + 0.5)
