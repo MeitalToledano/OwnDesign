@@ -29,6 +29,68 @@ test("wizard rooms become four tagged walls each, with the entered dimensions", 
   assert.equal(new Set(plan.walls.map((w) => w.id)).size, 8);
 });
 
+test("a wizard room can come with a door and a window on chosen sides", () => {
+  const plan = P.fromRooms([
+    { name: "Bedroom", type: "bedroom", width: 400, length: 300, openings: [{ type: "door", side: "south", at: 0.25 }, { type: "window", side: "north", at: 0.5 }] },
+    { name: "Store", type: "other", width: 200, length: 200 },
+  ]);
+  const [north, , south] = plan.walls;
+  const door = plan.openings.find((o) => o.type === "door");
+  const window = plan.openings.find((o) => o.type === "window");
+  assert.equal(plan.openings.length, 2, "a room without openings gets none");
+  assert.equal(door.wallId, south.id);
+  assert.equal(door.offset, 400 * 0.25 - 40, "centred a quarter along the wall");
+  assert.equal(window.wallId, north.id);
+  assert.equal(window.offset + window.width / 2, 200);
+});
+
+test("an opening wider than a short wizard wall is clamped to fit", () => {
+  const plan = P.fromRooms([{ name: "Closet", type: "other", width: 60, length: 60, openings: [{ type: "window", side: "north", at: 0.5 }] }]);
+  const [opening] = plan.openings;
+  assert.equal(opening.width, 60);
+  assert.equal(opening.offset, 0);
+});
+
+test("room furniture is what stands inside the room's walls", () => {
+  let plan = twoRooms();
+  plan = P.addFurniture(plan, { type: "sofa", w: 200, d: 90 }, 250, 200); // living room
+  plan = P.addFurniture(plan, { type: "double-bed", w: 160, d: 200 }, 650, 150); // bedroom
+  const [living, bedroom] = plan.rooms;
+  assert.deepEqual(P.roomFurniture(plan, living.id).map((f) => f.type), ["sofa"]);
+  assert.deepEqual(P.roomFurniture(plan, bedroom.id).map((f) => f.type), ["double-bed"]);
+  assert.deepEqual(P.roomFurniture(plan, "missing"), []);
+});
+
+test("applying a layout moves, adds and removes furniture without touching other rooms", () => {
+  let plan = twoRooms();
+  plan = P.addFurniture(plan, { type: "sofa", w: 200, d: 90 }, 250, 200);
+  plan = P.addFurniture(plan, { type: "chair", w: 45, d: 45 }, 100, 100);
+  plan = deepFreeze(P.addFurniture(plan, { type: "double-bed", w: 160, d: 200 }, 650, 150));
+  const [sofa, chair, bed] = plan.furniture;
+  const next = P.applyLayout(plan, {
+    remove: [chair.id],
+    items: [
+      { id: sofa.id, type: "sofa", x: 300, y: 330, w: 200, d: 90, rotation: 180 },
+      { type: "tv-unit", x: 250, y: 40, w: 160, d: 45, rotation: 0 },
+      { id: "not-there", type: "sofa", x: 0, y: 0, w: 1, d: 1, rotation: 0 },
+    ],
+  });
+  assert.deepEqual(next.furniture.map((f) => f.type), ["sofa", "double-bed", "tv-unit"]);
+  assert.deepEqual(next.furniture[0], { ...sofa, x: 300, y: 330, rotation: 180 });
+  assert.equal(next.furniture[1], bed, "a piece in another room is the same object");
+  assert.ok(next.furniture[2].id && next.furniture[2].id !== sofa.id);
+  assert.notEqual(next, plan);
+  // Undo after applying returns exactly the plan before it.
+  const h = P.history.undo(P.history.push(P.history.start(plan), next));
+  assert.equal(h.present, plan);
+});
+
+test("an empty layout changes nothing but what it removes", () => {
+  const plan = deepFreeze(P.addFurniture(twoRooms(), { type: "sofa", w: 200, d: 90 }, 250, 200));
+  assert.deepEqual(P.applyLayout(plan, { items: [] }).furniture, plan.furniture);
+  assert.deepEqual(P.applyLayout(plan, { remove: [plan.furniture[0].id], items: [] }).furniture, []);
+});
+
 test("rooms wrap onto a new row instead of forming one endless strip", () => {
   const plan = P.fromRooms(Array.from({ length: 6 }, (_, i) => ({ name: `R${i}`, type: "other", width: 500, length: 400 })));
   const ys = new Set(plan.rooms.map((room) => P.roomBox(plan, room.id).y));
