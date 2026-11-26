@@ -11,6 +11,7 @@ from app.auth import CurrentUser, current_user
 from app.catalog import FURNITURE_BY_TYPE
 from app.db import audit, service, settings
 from app.layout import LayoutError, Room, check_alternative, room_for, to_plan
+from app.layout_rules import rule_layout
 from app.responses import ok
 from app.routes.consultant import get_openai
 from app.routes.design import _writable_project
@@ -110,16 +111,72 @@ def _finish(suggestion_id: int, status: str, result: dict | None = None) -> None
     service().table("layout_suggestions").update({"status": status, "result": result}).eq("id", suggestion_id).execute()
 
 
+NO_FIT = "No layout fits this room with these pieces. Try fewer or smaller pieces, or let the AI move the existing ones."
+RULES_REASON = "Made by standard placement rules, not by the AI, so it does not take your brief into account."
+
+
+def _rule_alternatives(room: Room) -> list[dict]:
+    """Up to two standard layouts (two different starting walls), skipping a repeat."""
+    alternatives, seen = [], []
+    for variant, name in ((0, "Standard layout"), (1, "Standard layout, other wall")):
+        pieces = rule_layout(room, variant)
+        if pieces and pieces not in seen:
+            seen.append(pieces)
+            alternatives.append({"name": name, "reason": RULES_REASON, "source": "rules", "items": to_plan(room, pieces)})
+    return alternatives
+
+
+def _ask_ai(openai, room: Room, brief: dict | None) -> tuple[list[dict], dict]:
+    """The model's layouts that pass the check, and a note for the record (why others were dropped)."""
+    try:
+        # No automatic retries: each could be billed against the one reserved slot, and the editor waits locked.
+        response = openai.with_options(max_retries=0).responses.create(
+            model=settings().openai_model,
+            instructions=SYSTEM_PROMPT,
+            input=[{"role": "user", "content": _prompt(room, brief)}],
+            text={"format": {"type": "json_schema", "name": "layouts", "schema": ANSWER_SCHEMA, "strict": True}},
+            max_output_tokens=MAX_OUTPUT_TOKENS,
+            reasoning={"effort": "low"},
+            store=False,
+            timeout=TIMEOUT_SECONDS,
+        )
+        answer = _Answer.model_validate_json(response.output_text or "")
+    except (ValidationError, ValueError) as error:
+        log.warning("Layout answer unreadable: %s", type(error).__name__)
+        return [], {"error": "unreadable answer"}
+    except Exception as error:
+        log.warning("OpenAI call failed: %s", type(error).__name__)
+        return [], {"error": "call failed"}
+
+    alternatives, problems = [], []
+    for alternative in answer.alternatives[:MAX_ALTERNATIVES]:
+        try:
+            pieces = check_alternative(room, alternative.get("items") or [])
+        except LayoutError as error:
+            problems.append(str(error))
+            continue
+        name = str(alternative.get("name") or "").strip()[:60] or f"Layout {len(alternatives) + 1}"
+        reason = str(alternative.get("reason") or "").strip()[:240]
+        alternatives.append({"name": name, "reason": reason, "source": "ai", "items": to_plan(room, pieces)})
+    return alternatives, {"problems": problems}
+
+
 @router.post("", status_code=201)
 def suggest_layout(project_id: UUID, body: LayoutRequest, user: CurrentUser = Depends(current_user), openai=Depends(get_openai)):
     project = _writable_project(user, project_id)
-    if openai is None:
-        raise HTTPException(503, "Layout suggestions are not available right now")
     # A request that cannot be laid out is refused before a slot is used or anything is sent to the model.
     try:
         room = room_for(body.geometry, body.room_id, body.existing, body.keep_existing, Counter({p.type: p.count for p in body.new}))
     except LayoutError as error:
         raise HTTPException(422, str(error)) from None
+
+    if openai is None:
+        # No AI configured: the standard rules answer alone. Nothing is paid for, so no daily slot is used.
+        alternatives = _rule_alternatives(room)
+        if not alternatives:
+            raise HTTPException(422, NO_FIT)
+        audit("layout.suggested", user.id, studio_id=project["studio_id"], project_id=project["id"], alternatives=len(alternatives), source="rules")
+        return ok({"alternatives": alternatives})
 
     # Read before a slot is reserved: a failure here must not use up one of the user's daily requests.
     brief = user.db.table("project_briefs").select("brief").eq("project_id", project["id"]).execute().data
@@ -134,43 +191,17 @@ def suggest_layout(project_id: UUID, body: LayoutRequest, user: CurrentUser = De
             raise HTTPException(429, "Daily limit of layout suggestions reached. Please come back tomorrow.") from None
         raise
 
-    try:
-        # No automatic retries: each could be billed against the one reserved slot, and the editor waits locked.
-        response = openai.with_options(max_retries=0).responses.create(
-            model=settings().openai_model,
-            instructions=SYSTEM_PROMPT,
-            input=[{"role": "user", "content": _prompt(room, brief[0]["brief"] if brief else None)}],
-            text={"format": {"type": "json_schema", "name": "layouts", "schema": ANSWER_SCHEMA, "strict": True}},
-            max_output_tokens=MAX_OUTPUT_TOKENS,
-            reasoning={"effort": "low"},
-            store=False,
-            timeout=TIMEOUT_SECONDS,
-        )
-        answer = _Answer.model_validate_json(response.output_text or "")
-    except (ValidationError, ValueError) as error:
-        log.warning("Layout answer unreadable: %s", type(error).__name__)
-        _finish(suggestion_id, "failed", {"error": "unreadable answer"})
-        raise HTTPException(502, "The layout assistant gave an unusable answer. Please try again.") from None
-    except Exception as error:
-        log.warning("OpenAI call failed: %s", type(error).__name__)
-        # The reserved slot stays used: a failed call may still have been billed, so retries are never free.
-        _finish(suggestion_id, "failed", {"error": "call failed"})
-        raise HTTPException(502, "The layout assistant could not answer. Please try again.") from None
-
-    alternatives, problems = [], []
-    for alternative in answer.alternatives[:MAX_ALTERNATIVES]:
-        try:
-            pieces = check_alternative(room, alternative.get("items") or [])
-        except LayoutError as error:
-            problems.append(str(error))
-            continue
-        name = str(alternative.get("name") or "").strip()[:60] or f"Layout {len(alternatives) + 1}"
-        reason = str(alternative.get("reason") or "").strip()[:240]
-        alternatives.append({"name": name, "reason": reason, "items": to_plan(room, pieces)})
-
+    # The reserved slot stays used whatever happens next: a failed call may still have been billed.
+    alternatives, note = _ask_ai(openai, room, brief[0]["brief"] if brief else None)
     if not alternatives:
-        _finish(suggestion_id, "failed", {"problems": problems})
-        raise HTTPException(422, "No layout fits this room with these pieces. Try fewer or smaller pieces, or let the AI move the existing ones.")
-    _finish(suggestion_id, "done", {"alternatives": alternatives, "rejected": len(problems)})
-    audit("layout.suggested", user.id, studio_id=project["studio_id"], project_id=project["id"], alternatives=len(alternatives))
+        # The AI gave nothing usable (failed, unreadable, or every layout broke a rule): fall back to the rules.
+        alternatives = _rule_alternatives(room)
+    source = alternatives[0]["source"] if alternatives else None
+    if not alternatives:
+        _finish(suggestion_id, "failed", note)
+        if "error" in note:
+            raise HTTPException(502, "The layout assistant could not answer. Please try again.")
+        raise HTTPException(422, NO_FIT)
+    _finish(suggestion_id, "done", {**note, "source": source, "alternatives": alternatives})
+    audit("layout.suggested", user.id, studio_id=project["studio_id"], project_id=project["id"], alternatives=len(alternatives), source=source)
     return ok({"alternatives": alternatives})

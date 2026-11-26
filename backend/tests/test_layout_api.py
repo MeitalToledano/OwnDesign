@@ -76,6 +76,7 @@ def test_valid_layouts_come_back_in_plan_coordinates(api, world, fake, admin):
     assert response.status_code == 201, response.text
     alternatives = response.json()["data"]["alternatives"]
     assert [a["name"] for a in alternatives] == ["Wardrobe east", "Wardrobe west"], "the layout blocking the door is dropped"
+    assert {a["source"] for a in alternatives} == {"ai"}
     assert alternatives[0]["items"] == [{"type": "wardrobe", "x": 380, "y": 210, "w": 180, "d": 60, "rotation": 90}]
 
     call = fake.calls[0]
@@ -87,7 +88,7 @@ def test_valid_layouts_come_back_in_plan_coordinates(api, world, fake, admin):
     assert "ignore the rules" not in call["instructions"]
 
     row = admin.table("layout_suggestions").select("status, room_id, request, result").eq("project_id", world.mine["id"]).execute().data[-1]
-    assert (row["status"], row["room_id"], row["result"]["rejected"]) == ("done", "r1", 1)
+    assert (row["status"], row["room_id"], row["result"]["source"], row["result"]["problems"]) == ("done", "r1", "ai", ["A piece blocks a door"])
     assert "geometry" not in row["request"]
 
 
@@ -139,32 +140,62 @@ def test_bad_requests_are_422_and_cost_nothing(api, world, fake, admin, changes)
     assert fake.calls == [] and after == before
 
 
+TOO_MANY_WARDROBES = {"new": [{"type": "wardrobe", "count": 6}]}  # cannot fit beside the bed: the rules fail too
+
+
+def latest_row(admin, project):
+    return admin.table("layout_suggestions").select("status, result").eq("project_id", project["id"]).order("id").execute().data[-1]
+
+
 @pytest.mark.parametrize("text", ["not json", '{"alternatives": "x"}', ""])
-def test_an_unreadable_answer_is_502(api, world, fake, text):
+def test_an_unreadable_answer_falls_back_to_the_rules(api, world, fake, admin, text):
     fake.text = text
     response = api.post(url(world.theirs), json=body(), headers=world.other.headers)
-    assert response.status_code == 502 and "Traceback" not in response.text
+    assert response.status_code == 201, response.text
+    alternatives = response.json()["data"]["alternatives"]
+    assert alternatives and {a["source"] for a in alternatives} == {"rules"}
+    assert [i["type"] for i in alternatives[0]["items"]] == ["wardrobe"]
+    row = latest_row(admin, world.theirs)
+    assert (row["status"], row["result"]["source"], row["result"]["error"]) == ("done", "rules", "unreadable answer")
 
 
-def test_no_valid_layout_is_422_and_recorded_as_failed(api, world, fake, admin):
+def test_when_every_ai_layout_breaks_a_rule_the_rules_answer(api, world, fake, admin):
     fake.text = json.dumps({"alternatives": [BLOCKS_DOOR]})
-    assert api.post(url(world.theirs), json=body(), headers=world.other.headers).status_code == 422
-    row = admin.table("layout_suggestions").select("status, result").eq("project_id", world.theirs["id"]).order("id").execute().data[-1]
-    assert row["status"] == "failed" and row["result"]["problems"] == ["A piece blocks a door"]
+    response = api.post(url(world.theirs), json=body(), headers=world.other.headers)
+    assert response.status_code == 201 and response.json()["data"]["alternatives"][0]["source"] == "rules"
+    assert latest_row(admin, world.theirs)["result"]["problems"] == ["A piece blocks a door"]
 
 
-def test_a_failed_call_is_502_and_keeps_its_slot(api, world, fake, admin):
+def test_no_layout_from_the_ai_or_the_rules_is_422_and_recorded_as_failed(api, world, fake, admin):
+    fake.text = json.dumps({"alternatives": [BLOCKS_DOOR]})
+    assert api.post(url(world.theirs), json=body(**TOO_MANY_WARDROBES), headers=world.other.headers).status_code == 422
+    assert latest_row(admin, world.theirs)["status"] == "failed"
+
+
+def test_a_failed_call_falls_back_to_the_rules_and_keeps_its_slot(api, world, fake, admin):
     fake.fail = True
     response = api.post(url(world.theirs), json=body(), headers=world.other.headers)
+    assert response.status_code == 201 and "boom" not in response.text
+    assert response.json()["data"]["alternatives"][0]["source"] == "rules"
+    assert latest_row(admin, world.theirs)["result"]["error"] == "call failed"
+
+
+def test_a_failed_call_with_no_rule_layout_is_502(api, world, fake, admin):
+    fake.fail = True
+    response = api.post(url(world.theirs), json=body(**TOO_MANY_WARDROBES), headers=world.other.headers)
     assert response.status_code == 502 and "boom" not in response.text
-    row = admin.table("layout_suggestions").select("status").eq("project_id", world.theirs["id"]).order("id").execute().data[-1]
-    assert row["status"] == "failed"
+    assert latest_row(admin, world.theirs)["status"] == "failed"
 
 
-def test_unconfigured_assistant_is_503(api, world):
+def test_without_an_ai_key_the_rules_answer_and_no_slot_is_used(api, world, admin):
     app.dependency_overrides[get_openai] = lambda: None
     try:
-        assert api.post(url(world.theirs), json=body(), headers=world.other.headers).status_code == 503
+        before = len(admin.table("layout_suggestions").select("id").eq("user_id", world.other.id).execute().data)
+        response = api.post(url(world.theirs), json=body(), headers=world.other.headers)
+        assert response.status_code == 201 and response.json()["data"]["alternatives"][0]["source"] == "rules"
+        assert api.post(url(world.theirs), json=body(**TOO_MANY_WARDROBES), headers=world.other.headers).status_code == 422
+        after = len(admin.table("layout_suggestions").select("id").eq("user_id", world.other.id).execute().data)
+        assert after == before
     finally:
         app.dependency_overrides.pop(get_openai, None)
 

@@ -175,6 +175,8 @@ export function createLayoutPanel({ editor, projectId, onBusy, onChange }) {
           return h("button", { type: "button", class: "alt", "data-focus": `alt:${i}`, "aria-pressed": String(i === s.chosen), onclick: () => update({ chosen: i }) },
             planThumbnail(preview, `Preview of ${alt.name}`),
             h("strong", {}, alt.name),
+            // Made by the backend's standard rules because the AI gave nothing usable (or is not set up).
+            alt.source === "rules" && h("span", { class: "chip caution" }, "Standard rules"),
             alt.reason && h("span", { class: "muted small" }, alt.reason),
           );
         }),
