@@ -118,3 +118,9 @@ No security finding; code-review findings fixed in `bf0d858`. Pages: [security](
 Backend 62 passed / 64 skipped, frontend 36 passed, UI driven headless against a faked backend. Integration and
 browser tests against Supabase not run (no keys). Pages: [testing](testing.md).
 
+## [2026-11-26] build | Standard layout rules as the fallback
+After a hands-on demo, the user chose rules as the fallback when the AI gives nothing usable, and as the only
+source without a key. `backend/app/layout_rules.py`, `source` on each layout, "Standard rules" chip. Backend 81
+passed / 64 skipped, frontend 36 passed. Commits `4aa015c`, `f573c29` (a 500 on pieces outside the catalog, found by the security review). Pages: [overview](overview.md),
+[architecture](architecture.md), [decisions](decisions.md), [open-items](open-items.md), [testing](testing.md).
+

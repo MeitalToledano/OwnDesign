@@ -41,6 +41,9 @@ designer work on the same floor plan. AI assistance comes in later phases.
   kept clear in front of doors, exactly the requested pieces. Invalid layouts are dropped.
 - The layouts show as thumbnails; the chosen one is drawn dashed on the plan. Apply adds an undo step; saving
   makes a version as usual. Cancel and Try again leave the plan alone. 10 requests per user per day.
+- When the AI gives nothing usable (the call fails, the answer is unreadable, or every layout breaks a rule),
+  standard placement rules answer instead, marked "Standard rules" in the editor. Without an OpenAI key the rules
+  answer alone and no daily request is used.
 - Wizard presets now come with a door (south wall) and a window (north wall), and there is a Kids Room preset.
 
 ## Not built yet

@@ -24,6 +24,9 @@ Remove an item when it is resolved and note the resolution in [log.md](log.md).
 - **Not run against a live database or OpenAI yet.** The migration is not applied (`supabase db push`), the
   integration and browser tests (`test_layout_api.py`, the new journey in `test_e2e_design.py`) were skipped,
   and the planned feasibility check of layout quality (about 12 sample calls) is still to do.
+- The standard rules ignore the brief and know only a few habits; in a small room a desk chair may not fit in
+  front of the desk and is placed elsewhere. Without a key they run with no daily cap (CPU only, under a
+  second for 20 pieces).
 - Rooms are bounding rectangles: approximate once walls are moved or angled. Door clearance only for walls
   parallel to the axes.
 - Wizard default openings are fixed (door south, window north). Where a wizard room wraps under another, its

@@ -42,6 +42,11 @@ plan coordinates, privacy, isolation, 422/502/503, parallel cap, suspended studi
 `test_e2e_design.py` (suggestion answered in the browser). The editor UI was also driven headless against a
 faked backend: list, preview, apply, undo, cancel, keyboard focus.
 
+Later the same day, with the rules fallback: backend 81 passed, 64 skipped (same two files left out), frontend
+36 passed. New `backend/tests/test_layout_rules.py`: every room type's starting list gets a layout the real check
+accepts, bed against a door-free wall with its tables, variants differ, kept and moved pieces, extra companion
+pieces (found a bug: extra chairs and tables were dropped), an existing piece outside the catalog keeps its size, too much furniture, speed of the largest request.
+
 ## Local setup notes
 
 `backend/.env` needs `ALLOWED_ORIGINS` to include both `http://localhost:5500` and `http://127.0.0.1:5500` (the

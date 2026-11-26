@@ -56,6 +56,10 @@ string-built SQL; model output re-validated and shown as text only; logs hold er
 found and led to fixes for: focus loss in the panel that let Backspace delete the selected room, doors in a
 neighbour's shared wall being ignored, silent SDK retries, a slot used up when the brief read failed.
 
+Rules fallback (`4aa015c`): a security review of the commit found nothing (the access check still comes first; the
+rules use only the caller's own request; the chip is literal text). It noted a non-security bug, fixed with a
+test: an existing piece of a type outside the catalog crashed the rules (500) instead of keeping its own size.
+
 ## Every stage
 
 Run the `security-review` skill on the branch's local commits before pushing (`CLAUDE.md`, step 7), and add

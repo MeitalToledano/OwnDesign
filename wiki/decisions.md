@@ -20,6 +20,10 @@ Each line: the decision, who made it, why. Dates are in [log.md](log.md).
   conversion was rejected (excluded by the PRD, accuracy risk). A draft PR without the feasibility check, for
   the manager's review, because no keys were available on this machine.
 
+- **Standard rules as the layout fallback** (2026-11-26). After trying the demo, the user chose option 1 of three
+  (fallback; the hybrid "AI picks anchors, code places" and rules-only were the others): the rules answer when the
+  AI gives nothing usable, and alone when there is no key.
+
 ## By Claude (open to change)
 
 - **Layout suggestions:** 10 requests per user per day; not offered to guests; based on the editor's current
