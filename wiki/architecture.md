@@ -75,3 +75,21 @@ Design assistance (`backend/app/routes/design.py`, `consultant.py`, catalog in `
   the endpoint answers 503.
 - **Frontend:** `design.html` (brief, materials, moodboard tabs), `consultant.html`; pure logic in
   `frontend/js/design-logic.js`.
+
+Layout suggestions (`backend/app/routes/layout.py`, checks in `backend/app/layout.py`, migration
+`supabase/migrations/20261126090000_layout_suggestions.sql`):
+
+- `POST /v1/projects/{id}/layout-suggestions` with `{room_id, keep_existing, existing: [ids], new: [{type, count}],
+  geometry}`. The editor sends its current plan, saved or not. Goes through `_writable_project`.
+- A bad request (unknown room, a piece not in the room) is refused before anything is reserved or sent.
+  `reserve_layout_suggestion` then takes a per-user lock, counts the user's rows of the last 24 hours (cap 10)
+  and inserts a `pending` row; the row ends `done` or `failed` with the result. Only the requesting user can
+  read their rows. The OpenAI call uses a strict JSON schema, no automatic retries, `store=False`.
+- The model works in room-local centimetres (inside the walls, origin at the north-west corner). A room is its
+  walls' bounding box; doors and windows on any wall along that outline count (a neighbour's door in a shared
+  wall too). Sizes always come from the catalog or the plan, never from the model.
+- `FURNITURE` and `ROOM_DEFAULTS` (per room type) live in `backend/app/catalog.py`; the furniture list is also
+  in `frontend/js/catalog.js` for the offline guest editor, and `tests/test_layout.py` fails if they differ.
+  `GET /v1/catalog` returns `room_defaults`.
+- Frontend: `frontend/js/editor/layout.js` (panel and state), ghost layer in `render.js`, `roomFurniture` and
+  `applyLayout` in `plan.js`. While a request runs the canvas, tools and inspector are inert.

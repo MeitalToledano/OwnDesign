@@ -101,3 +101,20 @@ Several findings fixed (suspended studios, upload race, consultant cap and conte
 ## [2026-11-23] test | Phase 2 verified
 Backend 94 passed, frontend 31 passed. Pages: [testing](testing.md).
 
+## [2026-11-26] plan | Furniture-layout suggestions
+Repository cloned to a new machine. The user chose to plan AI layout suggestions for one room: client-chosen
+furniture list, keep or move existing pieces, 2–3 alternatives as thumbnails with a dashed preview, rooms from
+the plan plus wizard presets with a door and window. Pages: [decisions](decisions.md).
+
+## [2026-11-26] build | Layout suggestions (draft, no keys on this machine)
+Wizard presets with openings, backend catalog and layout checks, endpoint with daily cap and private records,
+editor panel. Commits `e71f20f`, `a021436`, `3975587`, `18a9a45`, `bf0d858` (local `dev`). Pages:
+[overview](overview.md), [architecture](architecture.md), [open-items](open-items.md).
+
+## [2026-11-26] security | Review of layout suggestions
+No security finding; code-review findings fixed in `bf0d858`. Pages: [security](security.md).
+
+## [2026-11-26] test | Layout suggestions, partial
+Backend 62 passed / 64 skipped, frontend 36 passed, UI driven headless against a faked backend. Integration and
+browser tests against Supabase not run (no keys). Pages: [testing](testing.md).
+

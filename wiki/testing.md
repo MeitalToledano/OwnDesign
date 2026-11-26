@@ -34,6 +34,14 @@ reload; designer sees the client's data; client-side rejections, markup stays te
 visitor; consultant page limits) passes together with `test_e2e.py` (9 browser tests in all). No chat message
 reaches OpenAI in the suite; the real call was checked by hand once.
 
+2026-11-26 (layout suggestions, on a machine without keys): backend 62 passed, 64 skipped (everything that
+needs Supabase), with `test_consultant.py` and `test_layout_api.py` left out because they cannot be collected
+without `.env` ([open-items.md](open-items.md)). Frontend 36 passed. New: `backend/tests/test_layout.py` (room,
+answer checks, request schema, catalog drift; no network), `backend/tests/test_layout_api.py` (fake OpenAI:
+plan coordinates, privacy, isolation, 422/502/503, parallel cap, suspended studio) and a browser journey in
+`test_e2e_design.py` (suggestion answered in the browser). The editor UI was also driven headless against a
+faked backend: list, preview, apply, undo, cancel, keyboard focus.
+
 ## Local setup notes
 
 `backend/.env` needs `ALLOWED_ORIGINS` to include both `http://localhost:5500` and `http://127.0.0.1:5500` (the

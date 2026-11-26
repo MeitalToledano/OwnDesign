@@ -32,6 +32,17 @@ designer work on the same floor plan. AI assistance comes in later phases.
 - The client and the studio's designers see the same brief, finishes and moodboard; the conversation is
   private to the user who held it.
 
+## Built: furniture-layout suggestions (2026-11-26, not yet run against a live database)
+
+- In the editor of a saved project, selecting a room shows "Suggest a layout". The client (or a studio designer)
+  confirms a furniture list prefilled from the room type (the room's existing pieces are listed and can be
+  unticked), and chooses whether the existing pieces stay put or may be moved. Up to 20 pieces.
+- The AI (OpenAI) returns up to three layouts. The backend checks each one: inside the room, no overlaps, 90 cm
+  kept clear in front of doors, exactly the requested pieces. Invalid layouts are dropped.
+- The layouts show as thumbnails; the chosen one is drawn dashed on the plan. Apply adds an undo step; saving
+  makes a version as usual. Cancel and Try again leave the plan alone. 10 requests per user per day.
+- Wizard presets now come with a door (south wall) and a window (north wall), and there is a Kids Room preset.
+
 ## Not built yet
 
 Renderings, budget, dossier,

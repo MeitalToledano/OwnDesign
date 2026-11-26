@@ -13,7 +13,19 @@ Each line: the decision, who made it, why. Dates are in [log.md](log.md).
 - **Stitch screens for later phases stay as references** in `design/stitch/`; the two that match Phase 1 (client portal, studio dashboard) are built with real data only.
 - **Working rules** in `CLAUDE.md`: plan first, Fable 5.2, three kinds of tests, security review at every stage, commit per finished piece of code, subagents for specialist work, memory in `wiki/`.
 
+- **Furniture-layout suggestions pulled forward** (2026-11-26). The PRD lists automated design proposals as
+  post-MVP; the user chose to build them now, with approval before anything changes. One room per request,
+  2–3 alternatives shown as thumbnails plus a dashed preview, the client chooses the furniture list (prefilled
+  by room type) and whether existing pieces may move. Rooms are picked from the plan; uploading a plan for AI
+  conversion was rejected (excluded by the PRD, accuracy risk). A draft PR without the feasibility check, for
+  the manager's review, because no keys were available on this machine.
+
 ## By Claude (open to change)
+
+- **Layout suggestions:** 10 requests per user per day; not offered to guests; based on the editor's current
+  (possibly unsaved) plan; a room is its walls' bounding rectangle; 90 cm clear in front of doors; the model
+  places pieces and deterministic code checks them (the planned fallback, if the model proves weak: the model
+  picks anchors and code computes positions).
 
 - **FastAPI**, managed with `uv`; **no-build frontend** with plain ES modules. Smallest stack that meets the PRD's "Python backend, HTML/CSS frontend".
 - **All writes go through the backend with the service key; users have SELECT only.** The approved plan limited the service key to three operations. Widened so geometry validation and the audit trail cannot be bypassed through the Supabase Data API ([architecture.md](architecture.md)).
