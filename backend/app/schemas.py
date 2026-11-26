@@ -4,7 +4,7 @@ import math
 from typing import Annotated, Literal
 from uuid import UUID
 
-from app.catalog import MATERIALS_BY_ID, STYLE_IDS
+from app.catalog import FURNITURE_BY_TYPE, MATERIALS_BY_ID, STYLE_IDS
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints, model_validator
 
 MAX_COORD_CM = 100_000  # 1 km: far beyond any residential plan
@@ -194,4 +194,40 @@ class MoodboardBody(Strict):
         keys = [(item.kind, item.ref) for item in self.items]
         if len(keys) != len(set(keys)):
             raise ValueError("an item can appear once on the board")
+        return self
+
+
+MAX_LAYOUT_PIECES = 20
+
+
+class LayoutPiece(Strict):
+    type: Annotated[str, StringConstraints(pattern=r"^[a-z0-9-]{1,40}$")]
+    count: Annotated[int, Field(ge=1, le=MAX_LAYOUT_PIECES)] = 1
+
+    @model_validator(mode="after")
+    def _in_catalog(self):
+        if self.type not in FURNITURE_BY_TYPE:
+            raise ValueError("unknown furniture type")
+        return self
+
+
+class LayoutRequest(Strict):
+    """One room's furniture for the AI to arrange. `existing`: ids of the room's pieces to keep in the room;
+    the others are removed when a suggestion is applied. `new`: catalog pieces to add."""
+
+    room_id: Id
+    keep_existing: bool = True
+    existing: Annotated[list[Id], Field(max_length=MAX_LAYOUT_PIECES)] = []
+    new: Annotated[list[LayoutPiece], Field(max_length=MAX_LAYOUT_PIECES)] = []
+    geometry: Geometry
+
+    @model_validator(mode="after")
+    def _size(self):
+        total = len(self.existing) + sum(piece.count for piece in self.new)
+        if not 1 <= total <= MAX_LAYOUT_PIECES:
+            raise ValueError(f"a layout needs between 1 and {MAX_LAYOUT_PIECES} pieces")
+        if self.keep_existing and not self.new:
+            raise ValueError("nothing to arrange: every piece stays where it is")
+        if len({piece.type for piece in self.new}) != len(self.new):
+            raise ValueError("list each furniture type once, with a count")
         return self

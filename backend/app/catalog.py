@@ -1,4 +1,5 @@
-"""Design styles and finish materials: the single source of truth for validation and for GET /v1/catalog."""
+"""Design styles, finish materials, furniture and per-room starting lists: the single source of truth for
+validation and for GET /v1/catalog."""
 
 SURFACES = ("floor", "walls", "ceiling", "cabinets")
 

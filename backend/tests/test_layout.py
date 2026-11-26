@@ -5,10 +5,11 @@ from collections import Counter
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from app.catalog import FURNITURE, ROOM_DEFAULTS
 from app.layout import DOOR_CLEARANCE_CM, LayoutError, check_alternative, footprint, room_for, to_plan
-from app.schemas import Geometry
+from app.schemas import Geometry, LayoutRequest
 
 CATALOG_JS = Path(__file__).resolve().parents[2] / "frontend" / "js" / "catalog.js"
 
@@ -159,6 +160,40 @@ def test_footprint_turns_with_the_piece():
     assert sides(footprint(0, 0, 200, 90, 0)) == sides(footprint(0, 0, 200, 90, 180)) == [-100, -45, 100, 45]
     turned = footprint(0, 0, 200, 90, 90)
     assert (round(turned.x1 - turned.x0), round(turned.y1 - turned.y0)) == (90, 200)
+
+
+# ---- the request -------------------------------------------------------------------------------------------------
+
+
+def request(**changes):
+    body = {"room_id": "r1", "keep_existing": True, "existing": ["bed"], "new": [{"type": "wardrobe"}], "geometry": bedroom([BED]).model_dump(by_alias=True)}
+    return {**body, **changes}
+
+
+def test_a_request_with_the_most_pieces_is_accepted():
+    LayoutRequest.model_validate(request(existing=[], new=[{"type": "chair", "count": 20}]))
+    LayoutRequest.model_validate(request(keep_existing=False, new=[]))  # only move what is there
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"new": [{"type": "chair", "count": 21}]},
+        {"existing": ["bed"], "new": [{"type": "chair", "count": 20}]},  # 21 in all
+        {"existing": [], "new": []},
+        {"new": []},  # keep the bed and add nothing: nothing to arrange
+        {"new": [{"type": "throne"}]},
+        {"new": [{"type": "chair", "count": 0}]},
+        {"new": [{"type": "chair"}, {"type": "chair"}]},
+        {"room_id": "<script>"},
+        {"existing": ["a b"]},
+        {"extra": 1},
+        {"geometry": {"schema": 2}},
+    ],
+)
+def test_bad_requests_are_rejected_by_the_schema(changes):
+    with pytest.raises(ValidationError):
+        LayoutRequest.model_validate(request(**changes))
 
 
 # ---- the catalog -------------------------------------------------------------------------------------------------

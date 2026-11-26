@@ -146,6 +146,8 @@ def check_alternative(room: Room, items: list[dict]) -> list[dict]:
     moved: set[str] = set()
     added: Counter = Counter()
     for item in items:
+        if not isinstance(item, dict):
+            raise LayoutError("The answer has an invalid piece")
         ref = item.get("ref") or ""
         if ref:
             spec = room.movable.get(ref)

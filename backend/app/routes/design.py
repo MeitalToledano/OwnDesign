@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from app.auth import CurrentUser, current_user
-from app.catalog import MATERIALS, STYLES, SURFACES
+from app.catalog import MATERIALS, ROOM_DEFAULTS, STYLES, SURFACES
 from app.db import audit, service
 from app.responses import ok
 from app.routes.projects import _project_or_404
@@ -25,7 +25,8 @@ def _writable_project(user: CurrentUser, project_id: UUID) -> dict:
 
 @catalog_router.get("")
 def get_catalog(_: CurrentUser = Depends(current_user)):
-    return ok({"styles": STYLES, "materials": MATERIALS, "surfaces": list(SURFACES)})
+    room_defaults = {room: [{"type": kind, "count": count} for kind, count in items] for room, items in ROOM_DEFAULTS.items()}
+    return ok({"styles": STYLES, "materials": MATERIALS, "surfaces": list(SURFACES), "room_defaults": room_defaults})
 
 
 @router.get("/brief")
