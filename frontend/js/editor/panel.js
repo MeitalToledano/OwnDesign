@@ -104,7 +104,8 @@ function versionsNode(versions, onLoad) {
   );
 }
 
-export function renderInspector(root, editor, { versions, onLoadVersion }) {
+// `roomTools`: the layout-suggestion panel (editor/layout.js), shown under a selected room of a saved project.
+export function renderInspector(root, editor, { versions, onLoadVersion, roomTools }) {
   const { selection, plan } = editor;
   const item = selection ? plan[selection.kind].find((candidate) => candidate.id === selection.id) : null;
   const key = item ? `${selection.kind}:${selection.id}` : "none";
@@ -112,6 +113,8 @@ export function renderInspector(root, editor, { versions, onLoadVersion }) {
     built = { key, versions };
     syncers = [];
     const spec = item && SPEC[selection.kind];
+    const tools = item && selection.kind === "rooms" && roomTools;
+    if (tools) tools.open(item.id);
     const title = h("div", { class: "name" });
     if (spec) syncers.push((current) => (title.textContent = spec.title(current)));
     root.replaceChildren(
@@ -122,6 +125,7 @@ export function renderInspector(root, editor, { versions, onLoadVersion }) {
               h("div", { class: "selection" }, h("span", { class: "label" }, "Active selection"), title),
               h("div", { class: "stack" }, h("span", { class: "label" }, "Dimensions"), h("div", { class: "fields" }, spec.fields.map((field) => fieldNode(field, editor)))),
               spec.review(item) && h("p", { class: "note" }, REVIEW_NOTE),
+              tools && tools.node,
             ]
           : summaryNode(),
         versionsNode(versions, onLoadVersion),

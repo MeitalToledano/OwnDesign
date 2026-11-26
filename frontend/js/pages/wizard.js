@@ -7,12 +7,19 @@ import { $, action, h, showStudio } from "../ui.js";
 const MAX_ROOMS = 30;
 const MIN_CM = 50;
 const MAX_CM = 3000;
+// Every preset starts with a door and a window, so the plan (and a layout suggestion for it) knows where the
+// way in and the light are. The positions are a fixed guess: the client moves them in the editor if needed.
+const DOOR_AND_WINDOW = [
+  { type: "door", side: "south", at: 0.25 },
+  { type: "window", side: "north", at: 0.5 },
+];
 const PRESETS = [
-  { label: "Living Room", icon: "weekend", type: "living", width: 500, length: 400 },
-  { label: "Primary Bed", icon: "bed", type: "bedroom", width: 400, length: 350 },
-  { label: "Kitchen", icon: "countertops", type: "kitchen", width: 350, length: 300 },
-  { label: "Bathroom", icon: "bathtub", type: "bathroom", width: 250, length: 200 },
-  { label: "Home Office", icon: "desk", type: "other", width: 300, length: 300 },
+  { label: "Living Room", icon: "weekend", type: "living", width: 500, length: 400, openings: DOOR_AND_WINDOW },
+  { label: "Primary Bed", icon: "bed", type: "bedroom", width: 400, length: 350, openings: DOOR_AND_WINDOW },
+  { label: "Kids Room", icon: "child_care", type: "bedroom", width: 300, length: 300, openings: DOOR_AND_WINDOW },
+  { label: "Kitchen", icon: "countertops", type: "kitchen", width: 350, length: 300, openings: DOOR_AND_WINDOW },
+  { label: "Bathroom", icon: "bathtub", type: "bathroom", width: 250, length: 200, openings: DOOR_AND_WINDOW },
+  { label: "Home Office", icon: "desk", type: "other", width: 300, length: 300, openings: DOOR_AND_WINDOW },
   { label: "Custom", icon: "add_circle", type: "other", width: 300, length: 300 },
 ];
 
@@ -20,8 +27,8 @@ const studio = load(KEYS.studio);
 const form = $("#wizard");
 // Rooms are replaced, never mutated: each edit builds a new array.
 let rooms = [
-  { name: "Living Room", type: "living", width: 500, length: 400 },
-  { name: "Primary Bed", type: "bedroom", width: 400, length: 350 },
+  { name: "Living Room", type: "living", width: 500, length: 400, openings: DOOR_AND_WINDOW },
+  { name: "Primary Bed", type: "bedroom", width: 400, length: 350, openings: DOOR_AND_WINDOW },
 ];
 let current = 0;
 

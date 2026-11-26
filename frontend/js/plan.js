@@ -32,14 +32,23 @@ function normalize(plan) {
   return { ...plan, openings };
 }
 
-export function addRoom(plan, { name, type, width, length }, x, y) {
+// Walls are drawn clockwise from the top-left corner, so their index is the side of the room.
+const SIDES = { north: 0, east: 1, south: 2, west: 3 };
+
+// `openings` places doors and windows on the room's sides: `at` is where the opening is centred, as a share
+// of that wall's length (0.5 is the middle). addOpening clamps an opening that does not fit.
+export function addRoom(plan, { name, type, width, length, openings = [] }, x, y) {
   const room = { id: uid("r"), name, type };
   const corners = [[x, y], [x + width, y], [x + width, y + length], [x, y + length]];
   const walls = corners.map(([x1, y1], i) => {
     const [x2, y2] = corners[(i + 1) % 4];
     return { id: uid("w"), x1, y1, x2, y2, thickness: THICKNESS.exterior, kind: "exterior", roomId: room.id };
   });
-  return { ...plan, rooms: [...plan.rooms, room], walls: [...plan.walls, ...walls] };
+  const withRoom = { ...plan, rooms: [...plan.rooms, room], walls: [...plan.walls, ...walls] };
+  return openings.reduce((next, { type: kind, side, at }) => {
+    const wall = walls[SIDES[side]];
+    return addOpening(next, wall.id, kind, wallLength(wall) * at);
+  }, withRoom);
 }
 
 export function fromRooms(rooms) {
@@ -176,6 +185,28 @@ export const planArea = (plan) => plan.rooms.reduce((total, room) => total + squ
 export function duplicateFurniture(plan, id) {
   const item = plan.furniture.find((candidate) => candidate.id === id);
   return { ...plan, furniture: [...plan.furniture, { ...item, id: uid("f"), x: item.x + 2 * GRID, y: item.y + 2 * GRID }] };
+}
+
+// Furniture whose centre lies inside the room's walls. The backend uses the same rule (backend/app/layout.py).
+export function roomFurniture(plan, roomId) {
+  const b = roomBox(plan, roomId);
+  if (!b) return [];
+  return plan.furniture.filter((item) => item.x >= b.x && item.x <= b.x + b.w && item.y >= b.y && item.y <= b.y + b.h);
+}
+
+// Applies an accepted layout suggestion: `remove` lists furniture ids to take out, an item with an `id` moves
+// that piece, an item without one is new. Unknown ids are ignored, so a stale suggestion cannot add ghosts.
+export function applyLayout(plan, { remove = [], items }) {
+  const gone = new Set(remove);
+  const moves = new Map(items.filter((item) => item.id).map((item) => [item.id, item]));
+  const furniture = plan.furniture
+    .filter((item) => !gone.has(item.id))
+    .map((item) => {
+      const move = moves.get(item.id);
+      return move ? { ...item, x: move.x, y: move.y, rotation: move.rotation } : item;
+    });
+  const added = items.filter((item) => !item.id).map(({ type, x, y, w, d, rotation }) => ({ id: uid("f"), type, x, y, w, d, rotation }));
+  return { ...plan, furniture: [...furniture, ...added] };
 }
 
 export const isPlan = (value) =>

@@ -224,6 +224,18 @@ body.app .appbar { grid-column: 1 / -1; }
 .version { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; width: 100%; min-height: 0; padding: 8px 10px; border: 0; border-radius: 4px; background: var(--surface-low); text-align: left; justify-items: start; font-weight: 400; }
 .version:hover { background: var(--surface-mid); }
 .version .when { grid-column: 1 / -1; }
+.layout-panel { padding: 12px; border-radius: 8px; background: var(--surface-low); }
+.layout-panel h3 { margin: 0; }
+.layout-panel label.check { min-height: 28px; align-self: auto; }
+.layout-panel .piece { display: flex; align-items: center; gap: 6px; }
+.layout-panel .piece .grow { flex: 1; font-size: 14px; }
+.layout-panel .piece select { flex: 1; min-width: 0; }
+.layout-panel .piece input[type="number"] { width: 56px; }
+.layout-panel .code.error { color: var(--error); }
+.alts { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.alt { display: grid; gap: 4px; align-content: start; justify-items: start; min-height: 0; padding: 6px; border: 1px solid transparent; border-radius: 4px; background: var(--panel); color: var(--ink); text-align: left; font-weight: 400; white-space: normal; }
+.alt[aria-pressed="true"] { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); background: var(--primary-tint); color: var(--ink); }
+.alt .thumb { padding: 4px; }
 
 #canvas { width: 100%; height: 100%; display: block; touch-action: none; outline-offset: -2px; }
 #canvas[data-tool="exterior"], #canvas[data-tool="partition"] { cursor: crosshair; }
@@ -243,6 +255,9 @@ body.app .appbar { grid-column: 1 / -1; }
 #canvas .item rect { fill: #ffffff; stroke: #242523; stroke-width: 2; }
 #canvas .item.review rect { fill: #eef3ef; }
 #canvas .item text { font-family: var(--font-mono); fill: var(--ink-soft); }
+/* A layout suggestion being previewed: not part of the plan yet. */
+#canvas .ghost rect { fill: rgb(255 219 207 / 0.55); stroke: var(--primary); stroke-width: 2; stroke-dasharray: 8 6; }
+#canvas .ghost text { font-family: var(--font-mono); fill: var(--primary); }
 #canvas .selected .wall, #canvas .selected .symbol { stroke: var(--primary-bright); }
 #canvas .selected.item rect { fill: #ecc3b5; stroke: var(--primary); stroke-dasharray: 8 6; }
 #canvas [data-kind]:focus-visible .wall, #canvas [data-kind]:focus-visible .symbol, #canvas [data-kind]:focus-visible rect { stroke: var(--primary-bright); }

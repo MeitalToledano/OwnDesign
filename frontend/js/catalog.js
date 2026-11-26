@@ -1,5 +1,6 @@
 // Generic furniture and fixtures with typical dimensions in centimetres (width x depth).
 // `review` marks wet-area and kitchen fixtures: moving them is conceptual until a professional reviews it.
+// backend/app/catalog.py holds the same list (layout suggestions); a backend test fails if the two differ.
 export const FURNITURE = [
   { type: "sofa", label: "Sofa", group: "Living", w: 200, d: 90 },
   { type: "armchair", label: "Armchair", group: "Living", w: 85, d: 85 },
@@ -9,6 +10,7 @@ export const FURNITURE = [
   { type: "chair", label: "Chair", group: "Living", w: 45, d: 45 },
   { type: "double-bed", label: "Double bed", group: "Bedroom", w: 160, d: 200 },
   { type: "single-bed", label: "Single bed", group: "Bedroom", w: 90, d: 200 },
+  { type: "bedside-table", label: "Bedside table", group: "Bedroom", w: 45, d: 40 },
   { type: "wardrobe", label: "Wardrobe", group: "Bedroom", w: 180, d: 60 },
   { type: "desk", label: "Desk", group: "Bedroom", w: 120, d: 60 },
   { type: "kitchen-counter", label: "Counter", group: "Kitchen", w: 240, d: 60, review: true },

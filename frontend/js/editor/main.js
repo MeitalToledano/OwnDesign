@@ -5,6 +5,7 @@ import { FURNITURE, FURNITURE_BY_TYPE } from "../catalog.js";
 import * as P from "../plan.js";
 import { KEYS, load, save as store } from "../store.js";
 import { $, action, h, run, showStudio, toast } from "../ui.js";
+import { createLayoutPanel } from "./layout.js";
 import { renderInspector } from "./panel.js";
 import { attachPointer, zoomAt } from "./pointer.js";
 import { draw, visibleArea } from "./render.js";
@@ -37,6 +38,8 @@ const state = {
   draft: null,
   versions: null,
   signedIn: false,
+  layout: null, // layout suggestions: saved projects only (a guest has no account to run the AI for)
+  busy: false, // a layout suggestion is being computed: the plan is locked meanwhile
 };
 
 const editor = {
@@ -65,6 +68,7 @@ const editor = {
     if (JSON.stringify(plan) !== JSON.stringify(state.history.present)) state.history = P.history.push(state.history, plan);
     state.selection = selection;
     keepDraft();
+    state.layout?.planChanged();
     render();
   },
   select(selection) {
@@ -109,13 +113,14 @@ function render() {
   canvas.setAttribute("viewBox", `${x} ${y} ${w} ${height}`);
   canvas.dataset.tool = state.tool;
   const hadFocus = canvas.contains(document.activeElement);
-  draw(canvas, { plan, selection: state.selection, preview: state.previewLine });
+  const ghost = state.selection?.kind === "rooms" ? state.layout?.ghost(state.selection.id) : null;
+  draw(canvas, { plan, selection: state.selection, preview: state.previewLine, ghost });
   if (hadFocus) {
     const node = state.selection && canvas.querySelector(`[data-kind="${state.selection.kind}"][data-id="${state.selection.id}"]`);
     (node ?? canvas).focus({ preventScroll: true });
   }
 
-  renderInspector($("#inspector"), editor, { versions: state.versions, onLoadVersion: loadVersion });
+  renderInspector($("#inspector"), editor, { versions: state.versions, onLoadVersion: loadVersion, roomTools: state.layout });
 
   for (const button of $("#tools").children) {
     const { tool } = button.dataset;
@@ -158,13 +163,23 @@ const zoomBy = (factor) => {
 const undo = () => {
   state.history = P.history.undo(state.history);
   keepDraft();
+  state.layout?.planChanged();
   render();
 };
 const redo = () => {
   state.history = P.history.redo(state.history);
   keepDraft();
+  state.layout?.planChanged();
   render();
 };
+
+// While a layout is being suggested nothing may change the plan it was asked for.
+function setBusy(busy) {
+  state.busy = busy;
+  // The inspector too: renaming the room or loading a version would make the answer useless and waste a daily slot.
+  for (const node of [canvas, $(".rail"), $("#actions"), $("#catalog"), $("#inspector")]) node.inert = busy;
+  $("#save").disabled = busy;
+}
 const removeSelection = () => state.selection && editor.commit(P.remove(editor.plan, state.selection.kind, state.selection.id), null);
 const rotateSelection = () => {
   const item = editor.plan.furniture.find((candidate) => candidate.id === state.selection?.id);
@@ -207,7 +222,9 @@ function placeAtCentre() {
 
 function onKey(event) {
   if (event.target.closest("input, select, textarea, dialog")) return;
+  if (event.target.closest(".layout-panel")) return; // its buttons and lists are not the canvas
   if (state.live || state.previewLine) return; // mid-drag: the drag would overwrite a keyboard edit
+  if (state.busy) return;
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
   const mod = event.ctrlKey || event.metaKey;
   if (mod && key === "z") event.shiftKey ? redo() : undo();
@@ -368,6 +385,7 @@ run(async () => {
     $("#tab-wizard").href = state.project.my_role === "designer" ? "studio.html" : "projects.html";
     $("#tab-wizard").textContent = "All projects";
     $("#nav-wizard").hidden = true;
+    state.layout = createLayoutPanel({ editor, projectId, onBusy: setBusy, onChange: render });
     // The brief and the consultant belong to a saved project, so their links appear only here.
     for (const page of ["design", "consultant"]) {
       for (const link of [$(`#tab-${page}`), $(`#nav-${page}`)]) {

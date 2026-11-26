@@ -116,6 +116,15 @@ function furnitureNode(item, selected) {
   );
 }
 
+// A suggested piece, not part of the plan: dashed, labelled, and not clickable.
+function ghostNode(item) {
+  const font = Math.min(Math.max(Math.min(item.w, item.d) * 0.16, 9), 15);
+  return svg("g", { class: "ghost", "pointer-events": "none", transform: `translate(${item.x} ${item.y}) rotate(${item.rotation})` },
+    svg("rect", { x: -item.w / 2, y: -item.d / 2, width: item.w, height: item.d, rx: 4 }),
+    svg("text", { y: font * 0.35, "text-anchor": "middle", "font-size": font }, FURNITURE_BY_TYPE.get(item.type)?.label ?? item.type),
+  );
+}
+
 function roomNode(plan, room, selected, scale) {
   const b = roomBox(plan, room.id);
   if (!b) return null;
@@ -166,7 +175,8 @@ function selectionOverlay(plan, selection, scale) {
   return [];
 }
 
-export function draw(canvas, { plan, selection, preview }) {
+// `ghost`: pieces of a layout suggestion being previewed, drawn over the plan's own furniture.
+export function draw(canvas, { plan, selection, preview, ghost }) {
   const area = visibleArea(canvas);
   const walls = new Map(plan.walls.map((wall) => [wall.id, wall]));
   const is = (kind, id) => selection?.kind === kind && selection.id === id;
@@ -174,6 +184,7 @@ export function draw(canvas, { plan, selection, preview }) {
     ...[
       grid(area),
       plan.furniture.map((item) => furnitureNode(item, is("furniture", item.id))),
+      ghost?.map(ghostNode),
       plan.walls.map((wall) => wallNode(wall, is("walls", wall.id))),
       plan.openings.map((opening) => openingNode(opening, walls.get(opening.wallId), is("openings", opening.id))),
       dimensions(plan, area.scale),

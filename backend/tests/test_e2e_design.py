@@ -363,6 +363,81 @@ def test_signed_out_visitor_is_sent_to_sign_in(servers, page, world):
     assert "Design Flat" not in page.content()
 
 
+def test_layout_suggestion_is_previewed_applied_undone_and_saved(servers, page, api, studio, make_user):
+    """Select a room, confirm the furniture, preview two suggestions, apply one, undo, apply again, save, reload.
+    The suggestion POST is answered in the browser with fixed layouts: no request reaches the model."""
+    import json
+
+    from tests.test_layout import BED, bedroom
+    from tests.test_layout_api import EAST, WEST
+
+    client = make_user("e2e-d2-layout")
+    project = api.post("/v1/projects", json={"studio_id": studio.id, "name": "Layout Flat", "property_type": "existing"}, headers=client.headers).json()["data"]
+    geometry = bedroom([BED]).model_dump(by_alias=True)
+    assert api.post(f"/v1/projects/{project['id']}/versions", json={"geometry": geometry}, headers=client.headers).status_code == 201
+
+    def to_plan(alt):  # the endpoint answers in plan coordinates: room-local + the room's origin (10, 10)
+        return {**alt, "items": [{"type": i["type"], "x": i["x"] + 10, "y": i["y"] + 10, "w": 180, "d": 60, "rotation": i["rotation"]} for i in alt["items"]]}
+
+    asked, replies = [], [{"status": 201, "data": {"alternatives": [to_plan(EAST), to_plan(WEST)]}}]
+
+    def answer(route):
+        asked.append(json.loads(route.request.post_data))
+        reply = replies[min(len(asked), len(replies)) - 1]
+        body = {"success": True, "data": reply["data"]} if reply["status"] < 400 else {"success": False, "error": reply["error"]}
+        route.fulfill(status=reply["status"], content_type="application/json", body=json.dumps(body))
+
+    page.route("**/layout-suggestions", answer)
+    sign_in(page, client, f"editor.html?project={project['id']}")
+    pieces = page.locator('#canvas [data-kind="furniture"]')
+    pieces.first.wait_for()
+    page.locator('[data-kind="rooms"][data-id="r1"] .room-hit').click()
+
+    # The list starts from the room type, minus what the room has: the bed is there, a wardrobe and two tables are not.
+    panel = page.get_by_role("region", name="Suggest a layout")
+    panel.get_by_label("How many: Wardrobe").wait_for()
+    assert panel.get_by_label("How many: Bedside table").input_value() == "2"
+    panel.get_by_label("How many: Bedside table").fill("0")
+    panel.get_by_label("How many: Bedside table").press("Enter")
+    assert page.locator("#layout-count").inner_text() == "2 / 20 pieces"
+    panel.get_by_role("button", name="Suggest layouts").click()
+    page.get_by_role("group", name="Layout suggestions").wait_for()
+    assert {k: v for k, v in asked[0].items() if k != "geometry"} == {"room_id": "r1", "keep_existing": True, "existing": ["bed"], "new": [{"type": "wardrobe", "count": 1}]}
+
+    # Two suggestions; the chosen one is drawn dashed. Cancel changes nothing.
+    assert page.locator("#canvas .ghost").count() == 1 and pieces.count() == 1
+    page.get_by_role("button", name="Preview of Wardrobe west").click()
+    assert page.locator(".alt[aria-pressed=true] strong").inner_text() == "Wardrobe west"
+    page.get_by_role("button", name="Cancel").click()
+    assert page.locator("#canvas .ghost").count() == 0 and pieces.count() == 1
+
+    # Apply adds the wardrobe and marks the plan unsaved; undo takes it away; apply again and save.
+    panel.get_by_role("button", name="Suggest layouts").click()
+    page.get_by_role("button", name="Apply", exact=True).click()
+    assert pieces.count() == 2 and page.locator("#status-save").inner_text() == "Unsaved changes"
+    page.get_by_role("button", name="Undo").click()
+    assert pieces.count() == 1
+    panel.get_by_role("button", name="Suggest layouts").click()
+    page.get_by_role("button", name="Apply", exact=True).click()
+    page.get_by_role("button", name="Save plan").click()
+    page.get_by_role("button", name="Save version").click()
+    page.get_by_text("Saved as v2").wait_for()
+    page.reload()
+    pieces.nth(1).wait_for()
+    latest = api.get(f"/v1/projects/{project['id']}/versions/latest", headers=client.headers).json()["data"]["geometry"]
+    assert sorted(f["type"] for f in latest["furniture"]) == ["double-bed", "wardrobe"]
+
+    # The server's refusals reach the user as a message, and the list stays as it was.
+    replies.append({"status": 429, "error": "Daily limit of layout suggestions reached. Please come back tomorrow."})
+    page.locator('[data-kind="rooms"][data-id="r1"] .room-hit').click()
+    panel.get_by_role("radio", name="Let the AI move them").check()
+    panel.get_by_role("button", name="Suggest layouts").click()
+    page.get_by_text("Daily limit of layout suggestions reached.").wait_for()
+    assert panel.get_by_role("button", name="Suggest layouts").is_enabled()
+    page.set_viewport_size({"width": 390, "height": 800})
+    assert not overflows(page)
+
+
 def test_consultant_page_starts_empty_and_limits_the_message(servers, page, world):
     # Safety net: no message may reach the model from this test. Any POST is answered here, in the browser.
     posts = []
